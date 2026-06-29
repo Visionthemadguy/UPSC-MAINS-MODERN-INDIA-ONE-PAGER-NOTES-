@@ -109,7 +109,7 @@ for mt in microthemes:
     )
 
     soup = BeautifulSoup(html, "html.parser")
-
+    print(html)
     for item in soup.find_all(
             ["h1", "h2", "h3", "h4",
              "p", "li", "table"]):
