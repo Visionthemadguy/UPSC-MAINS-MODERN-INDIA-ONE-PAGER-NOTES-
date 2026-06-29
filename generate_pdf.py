@@ -1,3 +1,4 @@
+```python
 import re
 import markdown2
 from bs4 import BeautifulSoup
@@ -17,8 +18,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
-
-# Create PDF
 doc = SimpleDocTemplate(
     "UPSC_OnePager_Notes.pdf",
     pagesize=A4,
@@ -55,11 +54,9 @@ body_style = ParagraphStyle(
 
 story = []
 
-# Read markdown
 with open("notes.md", "r", encoding="utf-8") as f:
     md = f.read()
 
-# Split by microtheme
 microthemes = re.split(r'(?=# MICROTHEME)', md)
 
 for mt in microthemes:
@@ -74,40 +71,41 @@ for mt in microthemes:
     story.append(Paragraph(title, title_style))
     story.append(Spacer(1, 5))
 
-    # Convert markdown → HTML
-html = markdown2.markdown(
-    "\n".join(lines[1:]),
-    extras=["tables"]
-)
-    soup = BeautifulSoup(html, "html.parser")
+    # -------- Detect and convert broken pipe tables --------
+    processed_lines = []
+    table_buffer = []
 
-    for item in soup.find_all(
-            ["h2", "h3", "h4", "p", "li", "table"]):
+    for line in lines[1:]:
 
-        # TABLES
-        if item.name == "table":
+        # Line looks like a table row
+        if line.count("|") >= 2:
 
-            data = []
+            cleaned = line.strip()
 
-            for row in item.find_all("tr"):
+            if cleaned.startswith("|"):
+                cleaned = cleaned[1:]
 
-                cols = row.find_all(["th", "td"])
+            if cleaned.endswith("|"):
+                cleaned = cleaned[:-1]
 
-                data.append([
-                    col.get_text(" ", strip=True)
-                    for col in cols
-                ])
+            cols = [c.strip() for c in cleaned.split("|")]
 
-            if data:
+            # Ignore markdown separator rows
+            if all(set(c) <= {"-"} for c in cols):
+                continue
 
-                table = Table(data)
+            table_buffer.append(cols)
+
+        else:
+
+            # Flush buffered table
+            if table_buffer:
+
+                table = Table(table_buffer)
 
                 table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0),
                      colors.lightgrey),
-
-                    ('TEXTCOLOR', (0, 0), (-1, 0),
-                     colors.black),
 
                     ('GRID', (0, 0), (-1, -1),
                      0.5, colors.black),
@@ -118,19 +116,47 @@ html = markdown2.markdown(
                     ('FONTSIZE', (0, 0), (-1, -1), 7),
 
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-
-                    ('LEFTPADDING', (0, 0), (-1, -1), 4),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4)
                 ]))
 
                 story.append(table)
                 story.append(Spacer(1, 8))
+                table_buffer = []
 
-        # HEADINGS
-        elif item.name in ["h2", "h3", "h4"]:
+            processed_lines.append(line)
+
+    # Flush last table if file ended with one
+    if table_buffer:
+
+        table = Table(table_buffer)
+
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0),
+             colors.lightgrey),
+
+            ('GRID', (0, 0), (-1, -1),
+             0.5, colors.black),
+
+            ('FONTNAME', (0, 0), (-1, 0),
+             'Helvetica-Bold'),
+
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ]))
+
+        story.append(table)
+        story.append(Spacer(1, 8))
+
+    # -------- Normal markdown processing --------
+
+    html = markdown2.markdown(
+        "\n".join(processed_lines)
+    )
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    for item in soup.find_all(
+            ["h2", "h3", "h4", "p", "li"]):
+
+        if item.name in ["h2", "h3", "h4"]:
 
             story.append(
                 Paragraph(
@@ -139,7 +165,6 @@ html = markdown2.markdown(
                 )
             )
 
-        # NORMAL TEXT
         else:
 
             text = item.get_text(" ", strip=True)
@@ -149,9 +174,9 @@ html = markdown2.markdown(
                     Paragraph(text, body_style)
                 )
 
-    # New microtheme starts on fresh page
     story.append(PageBreak())
 
 doc.build(story)
 
 print("PDF created successfully!")
+```
