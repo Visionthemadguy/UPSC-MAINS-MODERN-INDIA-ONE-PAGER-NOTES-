@@ -6,13 +6,16 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     PageBreak,
+    Spacer,
+    Table,
+    TableStyle
 )
 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER
-
+from reportlab.lib import colors
 
 doc = SimpleDocTemplate(
     "UPSC_OnePager_Notes.pdf",
@@ -63,7 +66,32 @@ for mt in microthemes:
 
     soup = BeautifulSoup(html, "html.parser")
 
-    for item in soup.find_all(["h2", "h3", "h4", "p", "li"]):
+  for item in soup.find_all(["h2", "h3", "h4", "p", "li", "table"]):
+
+    if item.name == "table":
+
+        data = []
+
+        for row in item.find_all("tr"):
+            cols = row.find_all(["th", "td"])
+            data.append(
+                [c.get_text(" ", strip=True) for c in cols]
+            )
+
+        if data:
+            tbl = Table(data, repeatRows=1)
+
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,-1), 7)
+            ]))
+
+            story.append(tbl)
+            story.append(Spacer(1, 6))
+
+    else:
 
         txt = item.get_text(" ", strip=True)
 
