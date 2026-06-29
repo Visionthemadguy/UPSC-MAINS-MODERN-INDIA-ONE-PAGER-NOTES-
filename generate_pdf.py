@@ -21,9 +21,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
-# ------------------------------------------------
-# PDF SETUP
-# ------------------------------------------------
+# ---------------- PDF SETUP ----------------
 
 doc = SimpleDocTemplate(
     "UPSC_OnePager_Notes.pdf",
@@ -62,14 +60,11 @@ body_style = ParagraphStyle(
 
 story = []
 
-# ------------------------------------------------
-# READ MARKDOWN
-# ------------------------------------------------
+# ---------------- READ FILE ----------------
 
 with open("notes.md", "r", encoding="utf-8") as f:
     md = f.read()
 
-# Split into microthemes
 microthemes = re.split(r'(?=# MICROTHEME)', md)
 
 for mt in microthemes:
@@ -84,62 +79,52 @@ for mt in microthemes:
     story.append(Paragraph(title, title_style))
     story.append(Spacer(1, 6))
 
-    content = "\n".join(lines[1:])
+    i = 1
 
-    # ------------------------------------------------
-    # FIX TABLES AUTOMATICALLY
-    # Adds blank line before any table row
-    # ------------------------------------------------
+    while i < len(lines):
 
-    content = re.sub(
-        r'(\*\*.*?\*\*)\n(\|)',
-        r'\1\n\n\2',
-        content
-    )
+        line = lines[i].strip()
 
-    # Convert markdown to HTML with table support
-    html = markdown2.markdown(
-        content,
-        extras=[
-            "tables",
-            "fenced-code-blocks",
-            "strike",
-            "task_list"
-        ]
-    )
+        # ---------- TABLE DETECTION ----------
+        if line.startswith("|"):
 
-    soup = BeautifulSoup(html, "html.parser")
-    print(html)
-    for item in soup.find_all(
-            ["h1", "h2", "h3", "h4",
-             "p", "li", "table"]):
+            table_lines = []
 
-        # ----------------------------------------
-        # TABLES
-        # ----------------------------------------
-        if item.name == "table":
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i].strip())
+                i += 1
 
             data = []
 
-            for row in item.find_all("tr"):
+            for row in table_lines:
 
-                cols = row.find_all(["th", "td"])
+                cells = [
+                    c.strip()
+                    for c in row.strip("|").split("|")
+                ]
 
-                data.append([
-                    c.get_text(" ", strip=True)
-                    for c in cols
-                ])
+                # skip separator rows
+                if all(
+                    set(cell) <= set("-:")
+                    for cell in cells
+                ):
+                    continue
+
+                data.append(cells)
 
             if data:
 
-                col_width = (
-                    (A4[0] - 0.9 * inch)
-                    / len(data[0])
-                )
+                max_cols = max(len(r) for r in data)
+
+                for r in data:
+                    while len(r) < max_cols:
+                        r.append("")
+
+                usable_width = A4[0] - (0.9 * inch)
 
                 tbl = Table(
                     data,
-                    colWidths=[col_width] * len(data[0]),
+                    colWidths=[usable_width / max_cols] * max_cols,
                     repeatRows=1
                 )
 
@@ -184,36 +169,38 @@ for mt in microthemes:
                 story.append(tbl)
                 story.append(Spacer(1, 8))
 
-        # ----------------------------------------
-        # HEADINGS
-        # ----------------------------------------
-        elif item.name in ["h1", "h2", "h3", "h4"]:
-
-            story.append(
-                Paragraph(
-                    item.get_text(" ", strip=True),
-                    heading_style
-                )
-            )
-
-        # ----------------------------------------
-        # PARAGRAPHS / LISTS
-        # ----------------------------------------
+        # ---------- NORMAL CONTENT ----------
         else:
 
-            text = item.get_text(" ", strip=True)
+            html = markdown2.markdown(line)
 
-            if text:
-                story.append(
-                    Paragraph(text, body_style)
-                )
+            soup = BeautifulSoup(html, "html.parser")
 
-    # Each microtheme starts on fresh page
+            for item in soup.find_all(
+                    ["h1", "h2", "h3", "h4", "p", "li"]):
+
+                text = item.get_text(" ", strip=True)
+
+                if not text:
+                    continue
+
+                if item.name in ["h1", "h2", "h3", "h4"]:
+
+                    story.append(
+                        Paragraph(text, heading_style)
+                    )
+
+                else:
+
+                    story.append(
+                        Paragraph(text, body_style)
+                    )
+
+            i += 1
+
     story.append(PageBreak())
 
-# ------------------------------------------------
-# BUILD PDF
-# ------------------------------------------------
+# ---------------- BUILD PDF ----------------
 
 doc.build(story)
 
