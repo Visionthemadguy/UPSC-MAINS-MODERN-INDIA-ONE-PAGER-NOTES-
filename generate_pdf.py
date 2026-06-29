@@ -75,11 +75,10 @@ for mt in microthemes:
     story.append(Spacer(1, 5))
 
     # Convert markdown → HTML
-    html = markdown(
-        "\n".join(lines[1:]),
-        extensions=["tables"]
-    )
-
+html = markdown2.markdown(
+    "\n".join(lines[1:]),
+    extras=["tables"]
+)
     soup = BeautifulSoup(html, "html.parser")
 
     for item in soup.find_all(
