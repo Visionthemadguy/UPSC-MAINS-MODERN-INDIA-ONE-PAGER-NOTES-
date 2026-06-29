@@ -1,4 +1,3 @@
-```python
 import re
 import markdown2
 from bs4 import BeautifulSoup
@@ -12,19 +11,27 @@ from reportlab.platypus import (
     TableStyle
 )
 
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import (
+    getSampleStyleSheet,
+    ParagraphStyle
+)
+
 from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 
+# ------------------------------------------------
+# PDF SETUP
+# ------------------------------------------------
+
 doc = SimpleDocTemplate(
     "UPSC_OnePager_Notes.pdf",
     pagesize=A4,
-    leftMargin=0.4 * inch,
-    rightMargin=0.4 * inch,
-    topMargin=0.4 * inch,
-    bottomMargin=0.4 * inch
+    leftMargin=0.45 * inch,
+    rightMargin=0.45 * inch,
+    topMargin=0.45 * inch,
+    bottomMargin=0.45 * inch
 )
 
 styles = getSampleStyleSheet()
@@ -32,8 +39,8 @@ styles = getSampleStyleSheet()
 title_style = ParagraphStyle(
     "Title",
     parent=styles["Heading1"],
-    fontSize=14,
     alignment=TA_CENTER,
+    fontSize=14,
     spaceAfter=10
 )
 
@@ -41,7 +48,8 @@ heading_style = ParagraphStyle(
     "Heading",
     parent=styles["Heading2"],
     fontSize=10,
-    spaceAfter=6
+    spaceBefore=8,
+    spaceAfter=5
 )
 
 body_style = ParagraphStyle(
@@ -54,9 +62,14 @@ body_style = ParagraphStyle(
 
 story = []
 
+# ------------------------------------------------
+# READ MARKDOWN
+# ------------------------------------------------
+
 with open("notes.md", "r", encoding="utf-8") as f:
     md = f.read()
 
+# Split into microthemes
 microthemes = re.split(r'(?=# MICROTHEME)', md)
 
 for mt in microthemes:
@@ -69,94 +82,112 @@ for mt in microthemes:
     title = lines[0].replace("#", "").strip()
 
     story.append(Paragraph(title, title_style))
-    story.append(Spacer(1, 5))
+    story.append(Spacer(1, 6))
 
-    # -------- Detect and convert broken pipe tables --------
-    processed_lines = []
-    table_buffer = []
+    content = "\n".join(lines[1:])
 
-    for line in lines[1:]:
+    # ------------------------------------------------
+    # FIX TABLES AUTOMATICALLY
+    # Adds blank line before any table row
+    # ------------------------------------------------
 
-        # Line looks like a table row
-        if line.count("|") >= 2:
+    content = re.sub(
+        r'(\*\*.*?\*\*)\n(\|)',
+        r'\1\n\n\2',
+        content
+    )
 
-            cleaned = line.strip()
-
-            if cleaned.startswith("|"):
-                cleaned = cleaned[1:]
-
-            if cleaned.endswith("|"):
-                cleaned = cleaned[:-1]
-
-            cols = [c.strip() for c in cleaned.split("|")]
-
-            # Ignore markdown separator rows
-            if all(set(c) <= {"-"} for c in cols):
-                continue
-
-            table_buffer.append(cols)
-
-        else:
-
-            # Flush buffered table
-            if table_buffer:
-
-                table = Table(table_buffer)
-
-                table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0),
-                     colors.lightgrey),
-
-                    ('GRID', (0, 0), (-1, -1),
-                     0.5, colors.black),
-
-                    ('FONTNAME', (0, 0), (-1, 0),
-                     'Helvetica-Bold'),
-
-                    ('FONTSIZE', (0, 0), (-1, -1), 7),
-
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ]))
-
-                story.append(table)
-                story.append(Spacer(1, 8))
-                table_buffer = []
-
-            processed_lines.append(line)
-
-    # Flush last table if file ended with one
-    if table_buffer:
-
-        table = Table(table_buffer)
-
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0),
-             colors.lightgrey),
-
-            ('GRID', (0, 0), (-1, -1),
-             0.5, colors.black),
-
-            ('FONTNAME', (0, 0), (-1, 0),
-             'Helvetica-Bold'),
-
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-        ]))
-
-        story.append(table)
-        story.append(Spacer(1, 8))
-
-    # -------- Normal markdown processing --------
-
+    # Convert markdown to HTML with table support
     html = markdown2.markdown(
-        "\n".join(processed_lines)
+        content,
+        extras=[
+            "tables",
+            "fenced-code-blocks",
+            "strike",
+            "task_list"
+        ]
     )
 
     soup = BeautifulSoup(html, "html.parser")
 
     for item in soup.find_all(
-            ["h2", "h3", "h4", "p", "li"]):
+            ["h1", "h2", "h3", "h4",
+             "p", "li", "table"]):
 
-        if item.name in ["h2", "h3", "h4"]:
+        # ----------------------------------------
+        # TABLES
+        # ----------------------------------------
+        if item.name == "table":
+
+            data = []
+
+            for row in item.find_all("tr"):
+
+                cols = row.find_all(["th", "td"])
+
+                data.append([
+                    c.get_text(" ", strip=True)
+                    for c in cols
+                ])
+
+            if data:
+
+                col_width = (
+                    (A4[0] - 0.9 * inch)
+                    / len(data[0])
+                )
+
+                tbl = Table(
+                    data,
+                    colWidths=[col_width] * len(data[0]),
+                    repeatRows=1
+                )
+
+                tbl.setStyle(TableStyle([
+                    ('BACKGROUND',
+                     (0, 0), (-1, 0),
+                     colors.lightgrey),
+
+                    ('FONTNAME',
+                     (0, 0), (-1, 0),
+                     'Helvetica-Bold'),
+
+                    ('GRID',
+                     (0, 0), (-1, -1),
+                     0.5, colors.black),
+
+                    ('VALIGN',
+                     (0, 0), (-1, -1),
+                     'TOP'),
+
+                    ('FONTSIZE',
+                     (0, 0), (-1, -1),
+                     7),
+
+                    ('LEFTPADDING',
+                     (0, 0), (-1, -1),
+                     4),
+
+                    ('RIGHTPADDING',
+                     (0, 0), (-1, -1),
+                     4),
+
+                    ('TOPPADDING',
+                     (0, 0), (-1, -1),
+                     4),
+
+                    ('BOTTOMPADDING',
+                     (0, 0), (-1, -1),
+                     4),
+                ]))
+
+                story.append(tbl)
+                story.append(Spacer(1, 8))
+
+        # ----------------------------------------
+        # HEADINGS
+        # ----------------------------------------
+        elif item.name in ["h1", "h2", "h3", "h4"]:
 
             story.append(
                 Paragraph(
@@ -165,6 +196,9 @@ for mt in microthemes:
                 )
             )
 
+        # ----------------------------------------
+        # PARAGRAPHS / LISTS
+        # ----------------------------------------
         else:
 
             text = item.get_text(" ", strip=True)
@@ -174,9 +208,13 @@ for mt in microthemes:
                     Paragraph(text, body_style)
                 )
 
+    # Each microtheme starts on fresh page
     story.append(PageBreak())
+
+# ------------------------------------------------
+# BUILD PDF
+# ------------------------------------------------
 
 doc.build(story)
 
 print("PDF created successfully!")
-```
